@@ -9,5 +9,5 @@ Literature mining for gene edit --> yield pairs
 
 Example:
 ```python
-optimize("limonene") → { "knockout": [geneX], "overexpress": [geneY], "yield": 12.3 g/L }
+optimize(target_molecule="limonene", host="E.coli") → { "knockout": [geneX], "overexpress": [geneY], "yield": 12.3 g/L }
 ```

@@ -1,0 +1,26 @@
+# Core Flask web framework for the API
+Flask==3.1.1
+blinker==1.9.0
+certifi==2025.7.14
+charset-normalizer==3.4.2
+click==8.2.1
+idna==3.10
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.2
+urllib3==2.5.0
+Werkzeug==3.1.3
+requests==2.32.4
+
+# FUTURE PACKAGES FOR FULL VISION:
+# NetworkX - Graph construction for metabolic networks
+# torch - PyTorch for deep learning
+# torch-geometric - GNN + Attention on metabolic graphs  
+# cobra - Flux simulation (CobraPy proxy to FBA)
+# numpy - Numerical computations
+# pandas - Data manipulation
+# scikit-learn - Machine learning utilities
+# gym - Reinforcement learning (PPO, SBX for strain edits)
+# biopython - Biological data handling
+# matplotlib - Visualization
+# seaborn - Statistical visualization

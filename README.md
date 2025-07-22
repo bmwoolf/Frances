@@ -2,7 +2,7 @@
 A closed-loop metabolic pathway optimizer that optimizes a microbial production loop for a specific target molecule.
 
 ## Root function 
-`optimize(target_molecule)` --> strain_design + pathway edits + predicted yield
+`optimize(target_molecule)` --> `strain_design + pathway edits + predicted yield`
 
 Example:
 ```python

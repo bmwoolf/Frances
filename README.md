@@ -24,4 +24,4 @@ GNN + attention: PyTorch Geometric (GATConv)
 RL policy (strain edits): PPO, SBX
 Flux simulation: CobraPy (proxy to FBA)
 
-All this so they can cut biomanufacturing time 
+All this so they can cut biomanufacturing time

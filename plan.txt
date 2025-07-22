@@ -1,0 +1,38 @@
+Here’s the step-by-step execution plan to build SynthLoop MVP, hyper-focused on speed to deployment:
+
+Phase 1: Close the Loop (Simulated Version)
+1. Define Input–Output Contract
+python
+Copy
+Edit
+optimize(target_molecule="limonene", host="E.coli")  
+→ { "knockout": [...], "overexpress": [...], "predicted_yield": X g/L }
+
+2. Build the Simulated Lab (Minimal Viable Physics)
+Task	Tool
+Download BiGG GEMs for E. coli	BiGG Models
+Run CobraPy FBA	Simulate gene edits → yield
+Optional: Create a toy flux simulator for faster iterations (simplified FBA proxy)	
+
+Phase 2: Build the Optimizer Model
+1. Graph Representation
+Task	Tool
+Parse KEGG/MetaCyc pathways to graphs	NetworkX / PyG Data
+Create host-specific metabolic graph	Match BiGG to KEGG
+
+2. Model Components
+Component	Tool
+GNN + Attention	PyTorch Geometric (GATConv)
+RL Policy (actions = gene edits)	Ray RLlib (PPO or REINFORCE)
+Simulated environment	CobraPy or toy proxy
+
+3. Reward Function
+Reward = predicted yield (g/L)
+
+Penalize over-complex edits (keep interventions minimal)
+
+Phase 3: Deploy the API
+Task	Tool
+Wrap optimize() in FastAPI	API endpoint
+Store results in MongoDB / JSON	For audit + retraining
+Package in Docker	Easy deployment

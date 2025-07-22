@@ -10,7 +10,7 @@ optimize(target_molecule="limonene", host_organism="E.coli") → { "knockout": [
 ```
 
 ## Tools
-Data sources: MetaCyc, KEGG, BioCyc  
+Data sources: MetaCyc, KEGG, BioCyc, FBA outputs  
 Graph construction: NetworkX  
 GNN + attention: PyTorch Geometric (GATConv)  
 RL policy (strain edits): PPO, SBX

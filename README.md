@@ -1,10 +1,7 @@
 # Frances
 A closed-loop metabolic pathway optimizer that optimizes a microbial production loop for a specific target molecule.
 
-Databases: MetaCyc, KEGG, BioCyc
-Software: CobraPy
-Literature mining for gene edit --> yield pairs
-
+## Root function 
 `optimize(target_molecule)` --> strain_design + pathway edits + predicted yield
 
 Example:
@@ -20,4 +17,11 @@ optimize(target_molecule="limonene", host_organism="E.coli") → { "knockout": [
 5. Returns actionable strain design
 6. Stores design + result for future reuse or retraining
 
-All this so they can cut biomanufacturing time
+## Tools
+Data sources: MetaCyc, KEGG, BioCyc  
+Graph construction: NetworkX  
+GNN + attention: PyTorch Geometric (GATConv)  
+RL policy (strain edits): PPO, SBX
+Flux simulation: CobraPy (proxy to FBA)
+
+All this so they can cut biomanufacturing time 

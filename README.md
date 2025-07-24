@@ -1,8 +1,8 @@
 # Frances
-A closed-loop metabolic pathway optimizer that optimizes a microbial production loop for a specific target molecule.
+A closed-loop metabolic pathway optimizer that optimizes a microbial production loop for a specific target molecule. Frances uses flux balance analysis (FBA), which is a meth function that predicts how cells use metabolism. It finds the best way to route chemicals through reactions, assuming steady state and no waste buildup. You give it a target (like grow fast), and it solves for the reaction rates to achieve that.
 
 ## Root function 
-`optimize(target_molecule)` --> strain_design + pathway edits + predicted yield
+`optimize(target_molecule)` --> `strain_design + pathway edits + predicted yield`
 
 Example:
 ```python

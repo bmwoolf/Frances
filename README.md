@@ -10,19 +10,24 @@ optimize(target_molecule="limonene", host_organism="E.coli") → { "knockout": [
 ```
 
 ## Steps
-1. Ingests a target molecule + host organism
-2. Runs GNN + Attention on the metabolic graph
-3. Generates interventions (knockouts/overexpressions)
-4. Simulates flux + yield (CobraPy or BiGG proxy)
-5. Returns actionable strain design
-6. Stores design + result for future reuse or retraining
+1. Ingest a target molecule and host organism (e.g. "limonene", "E.coli")
+2. Parse metabolic pathway data and build a host-specific graph
+3. Run GNN + attention over the graph to learn pathway structure and bottlenecks
+4. Use an RL policy to propose optimal gene knockouts and overexpressions
+5. Simulate predicted yield using CobraPy (FBA engine)
+6. Return actionable strain design via optimize()
+7. Log all input/output pairs for retracing, evaluation, and retraining
 
 ## Tools
-Data sources: MetaCyc, KEGG, BioCyc, FBA outputs  
-Graph construction: NetworkX  
-GNN + attention: PyTorch Geometric (GATConv)  
-RL policy (strain edits): PPO, SBX
-Flux simulation: CobraPy (proxy to FBA)
+Data sources: LASER DB, ICE/EDD, MetaCyc, KEGG, BiGG, KBase
+Empirical pretraining: LASER, JBEI/ABF EDD datasets
+Graph construction: NetworkX, KEGG parser
+GNN + Attention: PyTorch Geometric (GATConv)
+RL policy (gene edits): Ray RLlib (PPO), optionally SBX for fine control
+Flux simulation: CobraPy (BiGG GEMs) or toy FBA proxy
+API Deployment: FastAPI + Docker
+
+Extension: SBOL Canvas, Benchling, or CLI input integration
 
 ## Running this repo
 

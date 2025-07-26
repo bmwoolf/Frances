@@ -50,3 +50,5 @@ Package in Docker for labs to deploy on their local servers
 2. BioCAD Integration (TeselaGen, Asimov, SBOL Canvas): Frances fits after target + host selection. It takes design outputs (e.g. host strain, target molecule, constraints) from tools like TeselaGen or SBOL Canvas, computes optimal gene edits, and returns a recommended intervention set with predicted yield—ready for build or simulation.
 
 3. LIMS/ELN Embedding (Benchling, KBase, SciNote): Frances plugs into strain records or assay workflows. It uses existing metadata (host, target, design intent) to generate edits + predicted yield, closing the loop inside tools already used for DBTL tracking.
+
+4. Replace ODEs from older simulation software with Laplace Transforms

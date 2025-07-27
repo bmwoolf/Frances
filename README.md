@@ -103,3 +103,22 @@ print(f"Predicted yield: {result['predicted_yield']} g/L")
 print(f"Knockout genes: {result['knockout']}")
 print(f"Overexpress genes: {result['overexpress']}")
 ```
+
+### Other useful software:
+#### Pathway Design
+- [http://selenzyme.synbiochem.co.uk/](Selenzyme)
+- [https://github.com/TraceLD/retropath](RetroPath2.0)
+- [https://www.genome.jp/tools/pathpred/](PathPred)
+#### Codon Optimization
+- [https://github.com/Edinburgh-Genome-Foundry/DnaChisel/tree/master](DnaChisel)
+- [https://www.genscript.com/gensmart-free-gene-codon-optimization.html](GenSmart)
+- [https://en.vectorbuilder.com/tool/codon-optimization.html](VectorBuilder)
+#### Promoter Design
+- [https://github.com/Gardner-BinfLab/TISIGNER-ReactJS](TISIGNER-ReactJS)
+- [https://github.com/CIDARLAB/cello](Cello)
+#### Flux Modeling 
+- [http://www.optflux.org/](OptFlux)
+- [https://escher.github.io/](Escher)
+- [https://github.com/biosustain/cameo](cameo)
+#### ML-guided DBTL
+- [https://teselagen.com/](TeselaGen)

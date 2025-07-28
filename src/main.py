@@ -12,6 +12,9 @@ from torch_geometric.utils import from_networkx
 from networkx.algorithms.traversal.breadth_first_search import bfs_tree
 from sklearn.manifold import TSNE
 
+# import config
+from config import host, target, config
+
 # create cobra model
 from cobra import io
 cobra_model = io.load_json_model("iML1515.json")
@@ -140,7 +143,7 @@ cobra_model.optimize()
 # training loop via RL- train the GNN indirectly by using a reward signal
 # scoring head for each reaction node
 class EditScorer(nn.Module):
-    def __init__(self, emebed_dim):
+    def __init__(self, embed_dim):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(embed_dim, 32),
@@ -155,3 +158,62 @@ scorer = EditScorer(embed_dim=8)
 optimizer = Adam(list(model.parameters()) + list(scorer.parameters()), lr=1e-3)
 
 # define + run training loop
+print("=========TRAINING MODEL=========")
+model.train()
+scorer.train()
+
+num_steps = 100
+best_reward = -1
+best_edits = []
+
+for steps in range(num_steps):
+    cobra_model_cp = cobra_model.copy()
+    
+    # forward pass
+    z = model(data)
+
+    # score only editable reaction nodes
+    editable_nodes = [i for i, n in enumerate(H.nodes) if H.nodes[n]["type"] == "reaction"]
+    edit_embeddings = z[editable_nodes]
+    logits = scorer(edit_embeddings).squeeze()
+
+    # sample edits 
+    probs = torch.softmax(logits, dim=0)
+    sampled = torch.multinomial(probs, num_samples=3, replacement=False)
+    selected_rxns = [list(H.nodes)[editable_nodes[i]] for i in sampled.tolist()]
+
+    # apply edits in simulation
+    for rxn_id in selected_rxns:
+        cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
+    solution = cobra_model_cp.optimize()
+    reward = solution.objective_value if solution.status == "optimal" else 0.0
+
+    # track best reward and edits
+    if reward > best_reward:
+        best_reward = reward
+        best_edits = selected_rxns
+
+    # define loss (reinforce policy gradient loss)
+    selected_logits = logits[sampled]
+    loss = -reward * torch.mean(torch.log_softmax(logits, dim=0)[sampled])
+
+    # backprop
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    if steps % 10 == 0:
+        print(f"Step {steps} - Reward: {reward:.2f}")
+
+# save the model
+checkpoint_path = f"models/{host}_{target}_gnn_rl_checkpoint.pth"
+print(f"Saving checkpoint to: {checkpoint_path}")
+
+torch.save({
+    "model": model.state_dict(),
+    "scorer": scorer.state_dict(),
+    "reward": best_reward,
+    "edits": best_edits
+}, checkpoint_path)
+
+print(f"\nBest reward: {best_reward:.2f} from edits: {best_edits}")

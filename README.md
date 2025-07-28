@@ -1,3 +1,5 @@
+![Banner](assets/github_banner.png)
+
 # Frances
 A closed-loop metabolic pathway optimizer that optimizes a microbial production loop for a specific target molecule.
 

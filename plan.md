@@ -14,7 +14,7 @@ Plan for building Frances, an API-first synbio tool that suggests the best gene 
 
   ### 2. Build the Simulated Lab
   #### --> Model the underlying biology using the most accurate math and physics formulas we have today (and those formulas are just models themselves)
-  Download BiGG GEMs for E. coli: BiGG models
+  Download BiGG GEMs for E. coli: BiGG model for E Coli iML1515
   Run CobraPy FBA:	Simulate gene edits → yield
 
 

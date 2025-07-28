@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 # import iML1515 BiGG model
 from cobra import io
-model = io.load_json_model("iML1515.json")
+cobra_model = io.load_json_model("iML1515.json")
 
-solution = model.optimize()
+solution = cobra_model.optimize()
 print("Solution: ", solution)
 print("Objective value: ", solution.objective_value)

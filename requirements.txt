@@ -1,4 +1,3 @@
-# Core Flask web framework for the API
 Flask==3.1.1
 blinker==1.9.0
 certifi==2025.7.14
@@ -11,21 +10,18 @@ MarkupSafe==3.0.2
 urllib3==2.5.0
 Werkzeug==3.1.3
 requests==2.32.4
-
-# STEP 2: Flux Balance Analysis (FBA) packages
-cobra==0.29.1  # Main FBA library for metabolic modeling
-numpy==2.3.1  # Numerical computations for FBA
-pandas==2.3.1  # Data manipulation for metabolic data
-optlang==1.8.3  # Optimization language for FBA
-swiglpk==5.0.12  # Linear programming solver
-sympy==1.14.0  # Symbolic mathematics for metabolic equations
-python-libsbml==5.20.5  # SBML file handling for metabolic models
-
-# FUTURE PACKAGES FOR FULL VISION:
-# NetworkX - Graph construction for metabolic networks
-# torch - PyTorch for deep learning
-# torch-geometric - GNN + Attention on metabolic graphs  
-# gym - Reinforcement learning (PPO, SBX for strain edits)
-# biopython - Biological data handling
-# matplotlib - Visualization
-# seaborn - Statistical visualization
+networkx
+cobra==0.29.1
+numpy==1.26.4
+pandas==2.3.1
+optlang==1.8.3
+swiglpk==5.0.12
+sympy==1.14.0
+python-libsbml==5.20.5
+networkx==3.2.1
+torch==2.2.1
+torch-geometric==2.5.1
+gymnasium
+biopython==1.83
+matplotlib==3.9.1
+seaborn==0.13.2

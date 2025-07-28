@@ -104,6 +104,16 @@ print(f"Knockout genes: {result['knockout']}")
 print(f"Overexpress genes: {result['overexpress']}")
 ```
 
+## RL 
+```python
+loss = -reward * torch.mean(torch.log_softmax(logits, dim=0)[sampled])
+```
+`log_softmax(logits)`: log-probabilities of selecting each action (reaction edit)  
+`[sampled]`: selects the log-probs of the sampled actions (our proposed edits)  
+`torch.mean(...)`: averages across the 3 sampled edits  
+`-reward * ...`: multiplies by negative reward to increase probability of good actions  
+
+
 ### Other useful software:
 #### Pathway Design
 - [http://selenzyme.synbiochem.co.uk/](Selenzyme)

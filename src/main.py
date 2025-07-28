@@ -5,6 +5,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# use E. coli K-12 MG1655 as the host organism
 def optimize(target_molecule: str, host: str, constraints: Optional[Dict] = None) -> Dict[str, Any]:
     """
     Main entrypoint function for Frances metabolic pathway optimization.

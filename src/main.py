@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import os
 import torch
 import torch.nn.functional as F
+from torch.optim import Adam
 
 from torch_geometric.nn import GATConv
 from torch_geometric.data import Data
@@ -136,4 +137,21 @@ for rxn_id in suggested_edits:
     cobra_model.reactions.get_by_id(rxn_id).knock_out()
 cobra_model.optimize()
 
-# loop via RL
+# training loop via RL- train the GNN indirectly by using a reward signal
+# scoring head for each reaction node
+class EditScorer(nn.Module):
+    def __init__(self, emebed_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(embed_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+scorer = EditScorer(embed_dim=8)
+optimizer = Adam(list(model.parameters()) + list(scorer.parameters()), lr=1e-3)
+
+# define + run training loop

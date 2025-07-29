@@ -1,0 +1,128 @@
+[
+  {
+    "features": {
+      "num_mutations": 4,
+      "has_knockout": false,
+      "has_overexpression": false,
+      "has_plasmid": false,
+      "fold_improvement": 7.25,
+      "final_yield": 0
+    },
+    "target_genes": [
+      "3-hydroxy-3-methylglutaryl-coenzyme A reductase",
+      "farnesyl diphosphate synthase",
+      "valencene synthase",
+      "valencene synthase"
+    ],
+    "record": {
+      "file": "Record1421864891.17.txt",
+      "title": "Harnessing yeast subcellular compartments for the production of plant terpenoids",
+      "doi": "10.1016/j.ymben.2011.05.001",
+      "year": "2011",
+      "tags": "pharmaceuticals,terpenoids",
+      "target_product": "valencene",
+      "fold_improvement": "7.25",
+      "final_yield": "",
+      "mutations": [
+        {
+          "gene": "3-hydroxy-3-methylglutaryl-coenzyme A reductase",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "farnesyl diphosphate synthase",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "valencene synthase",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "valencene synthase",
+          "changes": "",
+          "effects": ""
+        }
+      ]
+    }
+  },
+  {
+    "features": {
+      "num_mutations": 9,
+      "has_knockout": false,
+      "has_overexpression": false,
+      "has_plasmid": false,
+      "fold_improvement": 1.88,
+      "final_yield": 0
+    },
+    "target_genes": [
+      "idi",
+      "ahr",
+      "geraniol synthase",
+      "mvaS",
+      "mevalonate kinase",
+      "phosphomevalonate kinase",
+      "mvaE",
+      "ispA",
+      "mevalonate diphosphate decarboxylase"
+    ],
+    "record": {
+      "file": "Record1421188447.64.txt",
+      "title": "Engineering Escherichia coli for selective geraniol production with minimized endogenous dehydrogenation",
+      "doi": "10.1016/j.jbiotec.2013.11.009",
+      "year": "2013",
+      "tags": "terpenoids",
+      "target_product": "geraniol",
+      "fold_improvement": "1.88",
+      "final_yield": "",
+      "mutations": [
+        {
+          "gene": "idi",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "ahr",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "geraniol synthase",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "mvaS",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "mevalonate kinase",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "phosphomevalonate kinase",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "mvaE",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "ispA",
+          "changes": "",
+          "effects": ""
+        },
+        {
+          "gene": "mevalonate diphosphate decarboxylase",
+          "changes": "",
+          "effects": ""
+        }
+      ]
+    }
+  }
+]

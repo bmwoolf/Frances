@@ -9,7 +9,7 @@ def extract_laser_data():
     print("=== Simple LASER Data Extraction ===")
     
     # Find all LASER record files
-    laser_dir = "../laser_release/database_store"
+    laser_dir = "../../laser_release/database_store"
     record_files = []
     
     for year in ['2014', '2015']:
@@ -22,7 +22,8 @@ def extract_laser_data():
     # Extract basic information from each record
     extracted_data = []
     
-    for record_file in record_files[:10]:  # Start with first 10 files
+    # Process ALL files, not just first 10
+    for record_file in record_files:
         try:
             with open(record_file, 'r') as f:
                 content = f.read()
@@ -62,7 +63,8 @@ def extract_laser_data():
                 else:
                     break
             
-            if record['target_product']:  # Only include records with target products
+            # Include ALL records with mutations, not just those with target products
+            if record['mutations']:  # Only include records with mutations
                 extracted_data.append(record)
                 
         except Exception as e:
@@ -71,25 +73,26 @@ def extract_laser_data():
     
     print(f"Successfully extracted {len(extracted_data)} records")
     
-    # Filter for terpenoid-related records
-    terpenoid_records = []
+    # Less restrictive filtering - include more metabolic engineering examples
+    metabolic_records = []
     for record in extracted_data:
-        if ('terpenoid' in record.get('tags', '').lower() or 
-            'limonene' in record['target_product'].lower() or
-            'terpene' in record['target_product'].lower()):
-            terpenoid_records.append(record)
+        # Include records with any metabolic engineering relevance
+        if (record['mutations'] and  # Has mutations
+            any(mut['gene'] for mut in record['mutations']) and  # Has gene names
+            record.get('fold_improvement', '')):  # Has performance data
+            metabolic_records.append(record)
     
-    print(f"Found {len(terpenoid_records)} terpenoid-related records")
+    print(f"Found {len(metabolic_records)} metabolic engineering records")
     
-    # Print all target products to see what's available
-    print("\nAll target products found:")
-    for record in extracted_data:
+    # Print sample of target products to see what's available
+    print("\nSample target products found:")
+    for record in extracted_data[:20]:  # Show first 20
         if record['target_product']:
             print(f"  {record['target_product']} (from {record['file']})")
     
     # Create training data
     training_data = []
-    for record in terpenoid_records:
+    for record in metabolic_records:
         features = {
             'num_mutations': len(record['mutations']),
             'has_knockout': any('del' in mut['changes'].lower() for mut in record['mutations']),
@@ -108,8 +111,8 @@ def extract_laser_data():
         })
     
     # Save the data
-    os.makedirs('../data', exist_ok=True)
-    with open('../data/laser_training_data.json', 'w') as f:
+    os.makedirs('../../data', exist_ok=True)
+    with open('../../data/laser_training_data.json', 'w') as f:
         json.dump(training_data, f, indent=2, default=str)
     
     print(f"Created {len(training_data)} training examples")

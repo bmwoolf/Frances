@@ -13,6 +13,10 @@ import os
 from laser_dataset import LASERDataset
 from config import host, target, config
 
+# Ensure GPU is available
+if not torch.cuda.is_available():
+    raise RuntimeError("GPU is required for training. No CUDA device found.")
+
 # Import GNN components from main
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv
@@ -125,7 +129,7 @@ def train_supervised_model():
     print("=== SUPERVISED TRAINING WITH LASER DATA ===")
     
     # Set device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda')
     print(f"Using device: {device}")
     
     # Build network
@@ -245,8 +249,8 @@ def train_supervised_model():
             # Print batch info occasionally
             if batch_idx % 5 == 0:
                 print(f"Epoch {epoch}, Batch {batch_idx}: Loss = {loss.item():.4f}")
-                print(f"  Predicted: {predicted_yields.detach().cpu().numpy()}")
-                print(f"  Target: {target_yields.detach().cpu().numpy()}")
+                print(f"  Predicted: {predicted_yields.detach().numpy()}")
+                print(f"  Target: {target_yields.detach().numpy()}")
                 print(f"  Papers: {[title[:50] + '...' for title in batch_data['paper_title']]}")
         
         avg_loss = epoch_loss / num_batches

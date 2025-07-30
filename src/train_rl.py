@@ -268,8 +268,16 @@ for steps in range(num_steps):
         edit_embeddings = z[editable_nodes]
         logits = scorer(edit_embeddings).squeeze()
 
-    # sample edits 
+    # sample edits with numerical stability
+    # Clip logits to prevent extreme values
+    logits = torch.clamp(logits, min=-10.0, max=10.0)
     probs = torch.softmax(logits, dim=0)
+    
+    # Check for invalid probabilities
+    if torch.isnan(probs).any() or torch.isinf(probs).any():
+        print(f"Warning: Invalid probabilities detected at step {steps}, using uniform distribution")
+        probs = torch.ones_like(probs) / len(probs)
+    
     sampled = torch.multinomial(probs, num_samples=num_edits_per_step, replacement=False)
     selected_rxns = [list(H.nodes)[editable_nodes[i]] for i in sampled.tolist()]
 
@@ -296,8 +304,11 @@ for steps in range(num_steps):
         with torch.no_grad():
             predictions = pretrained_scorer(edit_embeddings)
             predicted_yield = predictions.mean().item()  # Average the predictions
+            
+            # Normalize predicted yield to reasonable range [-1, 1]
+            predicted_yield = torch.tanh(torch.tensor(predicted_yield)).item()
         
-        # Combine rewards: 70% COBRA simulation, 30% pretrained model prediction
+        # Combine rewards: 70% COBRA simulation, 30% normalized predicted yield
         reward = 0.7 * cobra_reward + 0.3 * predicted_yield
         
         if steps % 20 == 0:
@@ -313,6 +324,11 @@ for steps in range(num_steps):
         print(f"  Mapped genes: {selected_genes}")
         print(f"  LASER matches: {len(similar_strategies)} strategies found")
 
+    # Ensure reward is reasonable
+    if torch.isnan(torch.tensor(reward)) or torch.isinf(torch.tensor(reward)):
+        print(f"Warning: Invalid reward detected at step {steps}, using fallback reward")
+        reward = 0.0
+    
     # track best reward and edits
     if reward > best_reward:
         best_reward = reward

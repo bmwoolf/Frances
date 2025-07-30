@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
+from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 
 from torch_geometric.nn import GATConv
@@ -16,6 +17,67 @@ from sklearn.manifold import TSNE
 
 # import config
 from config import host, target, config
+
+# Ensure GPU is available
+if not torch.cuda.is_available():
+    raise RuntimeError("GPU is required for training. No CUDA device found.")
+
+# Define model classes first
+class GNN(torch.nn.Module):
+    def __init__(self, in_dim, hidden_dim, out_dim):
+        super().__init__()
+        self.conv1 = GATConv(in_dim, hidden_dim)  # Match pretrained model names
+        self.conv2 = GATConv(hidden_dim, out_dim)  # Match pretrained model names
+
+    def forward(self, data):
+        x, edge_index = data.x, data.edge_index
+        x = F.relu(self.conv1(x, edge_index))
+        x = self.conv2(x, edge_index)
+        return x
+
+class EditScorer(nn.Module):
+    """MLP to score edit sets"""
+    def __init__(self, input_dim, hidden_dim=512):
+        super(EditScorer, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim // 2)
+        self.fc3 = nn.Linear(hidden_dim // 2, 1)
+        self.dropout = nn.Dropout(0.1)
+    
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = F.relu(self.fc2(x))
+        x = self.dropout(x)
+        x = self.fc3(x)
+        return x.squeeze()
+
+# Load pretrained model from supervised training
+def load_pretrained_model():
+    """Load the pretrained GNN and EditScorer from supervised training"""
+    device = torch.device('cuda')
+    
+    # Initialize models with same architecture as supervised training
+    gnn = GNN(in_dim=3, hidden_dim=512, out_dim=256).to(device)
+    scorer = EditScorer(input_dim=256, hidden_dim=512).to(device)
+    
+    try:
+        checkpoint_path = "models/E.coli_limonene_supervised_checkpoint.pth"
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        
+        gnn.load_state_dict(checkpoint['gnn_state_dict'])
+        scorer.load_state_dict(checkpoint['scorer_state_dict'])
+        
+        print(f"✅ Loaded pretrained model from {checkpoint_path}")
+        print(f"   - Best Loss: {checkpoint.get('loss', 'Unknown'):.4f}")
+        print(f"   - Epoch: {checkpoint.get('epoch', 'Unknown')}")
+        
+        return gnn, scorer, device
+        
+    except Exception as e:
+        print(f"❌ Error loading pretrained model: {e}")
+        print("Will train from scratch")
+        return None, None, device
 
 # Load LASER training data
 def load_laser_data():
@@ -149,92 +211,66 @@ data = from_networkx(H)
 data.x = torch.tensor([H.nodes[n]["x"] for n in H.nodes], dtype=torch.float)
 print(f"Graph has {data.num_nodes} nodes and {data.num_edges} edges")
 
-# create GNN with the graph as the input
-class GNN(torch.nn.Module):
-    def __init__(self, in_dim, hidden_dim, out_dim):
-        super().__init__()
-        self.gat1 = GATConv(in_dim, hidden_dim)
-        self.gat2 = GATConv(hidden_dim, out_dim)
+# Load pretrained model
+pretrained_gnn, pretrained_scorer, device = load_pretrained_model()
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = F.relu(self.gat1(x, edge_index))
-        x = self.gat2(x, edge_index)
-        return x
+# Move data to device
+data = data.to(device)
 
-model = GNN(in_dim=3, hidden_dim=16, out_dim=8)  # Changed to 8D embeddings
-embeddings = model(data)
+# Use pretrained models if available, otherwise create new ones
+if pretrained_gnn is not None and pretrained_scorer is not None:
+    model = pretrained_gnn
+    scorer = pretrained_scorer
+    print("Using pretrained models for RL training")
+else:
+    model = GNN(in_dim=3, hidden_dim=512, out_dim=256)
+    scorer = EditScorer(input_dim=256, hidden_dim=512)
+    model = model.to(device)
+    scorer = scorer.to(device)
+    print("Training from scratch")
 
-print(f"Node embeddings shape: {embeddings.shape}")
-print(f"Sample embeddings: {embeddings[:5]}")
+# Move models to device
+model = model.to(device)
+scorer = scorer.to(device)
 
-# interpret the embeddings
-z = embeddings.detach().numpy()
-z = TSNE(n_components=2).fit_transform(z)
-
-plt.scatter(z[:, 0], z[:, 1], c=[H.nodes[n]['x'][0] for n in H.nodes])
-plt.title("Node Embeddings (colored by node type)")
-plt.savefig("network_graphs/node_embeddings.png", dpi=300, bbox_inches='tight')
-print("Embeddings visualization saved as 'network_graphs/node_embeddings.png'")
-plt.close()
-
-# filter to editable nodes (type == "reaction")
-editable_nodes = [i for i, n in enumerate(H.nodes) if H.nodes[n]["type"] == "reaction"]
-edit_embeddings = embeddings[editable_nodes]
-
-# score potential edits: shape: [#reactions]
-edit_scores = torch.softmax(edit_embeddings.mean(dim=1), dim=0)
-# pick top k expressions or knockouts
-top_k = torch.topk(edit_scores, k=5)
-flat_indices = [i if isinstance(i, int) else i[0] for i in top_k.indices.tolist()]
-suggested_edits = [list(H.nodes)[editable_nodes[i]] for i in flat_indices]
-print("Suggested edits:", suggested_edits)
-
-# apply edit and simulate yield with cobra
-for rxn_id in suggested_edits:
-    cobra_model.reactions.get_by_id(rxn_id).knock_out()
-cobra_model.optimize()
-
-# training loop via RL- train the GNN indirectly by using a reward signal
-# scoring head for each reaction node
-class EditScorer(nn.Module):
-    def __init__(self, embed_dim):
-        super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(embed_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1)
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-scorer = EditScorer(embed_dim=8)
 optimizer = Adam(list(model.parameters()) + list(scorer.parameters()), lr=1e-3)
+
+# Mixed precision training for GPU acceleration
+scaler = GradScaler()
 
 # define + run training loop
 print("=========TRAINING MODEL=========")
-model.train()
-scorer.train()
 
+# Configuration
 num_steps = 10000
+num_edits_per_step = 3  # Number of reactions to edit per training step
 best_reward = -1
 best_edits = []
+
+print(f"Training configuration:")
+print(f"  - Steps: {num_steps}")
+print(f"  - Edits per step: {num_edits_per_step}")
+print(f"  - Device: {device}")
+print()
+
+model.train()
+scorer.train()
 
 for steps in range(num_steps):
     cobra_model_cp = cobra_model.copy()
     
-    # forward pass
-    z = model(data)
+    # forward pass with mixed precision
+    with autocast():
+        z = model(data)
 
-    # score only editable reaction nodes
-    editable_nodes = [i for i, n in enumerate(H.nodes) if H.nodes[n]["type"] == "reaction"]
-    edit_embeddings = z[editable_nodes]
-    logits = scorer(edit_embeddings).squeeze()
+        # score only editable reaction nodes
+        editable_nodes = [i for i, n in enumerate(H.nodes) if H.nodes[n]["type"] == "reaction"]
+        edit_embeddings = z[editable_nodes]
+        logits = scorer(edit_embeddings).squeeze()
 
     # sample edits 
     probs = torch.softmax(logits, dim=0)
-    sampled = torch.multinomial(probs, num_samples=3, replacement=False)
+    sampled = torch.multinomial(probs, num_samples=num_edits_per_step, replacement=False)
     selected_rxns = [list(H.nodes)[editable_nodes[i]] for i in sampled.tolist()]
 
     # apply edits in simulation
@@ -242,12 +278,34 @@ for steps in range(num_steps):
         cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
     solution = cobra_model_cp.optimize()
     
-    # Calculate hybrid reward: combine COBRA simulation with LASER data
+    # Calculate hybrid reward: combine COBRA simulation with pretrained model prediction
     cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
-    laser_reward, selected_genes, similar_strategies = calculate_laser_reward(selected_rxns, laser_data)
     
-    # Combine rewards: 70% COBRA simulation, 30% LASER validation
-    reward = 0.7 * cobra_reward + 0.3 * laser_reward
+    # Initialize variables for debug output
+    selected_genes = []
+    similar_strategies = []
+    laser_reward = 0.0
+    predicted_yield = 0.0
+    
+    # Use pretrained model to predict yield from edits
+    if pretrained_gnn is not None and pretrained_scorer is not None:
+        # Get embeddings for the selected edits
+        edit_embeddings = z[editable_nodes][sampled]
+        
+        # Predict yield using pretrained scorer
+        with torch.no_grad():
+            predictions = pretrained_scorer(edit_embeddings)
+            predicted_yield = predictions.mean().item()  # Average the predictions
+        
+        # Combine rewards: 70% COBRA simulation, 30% pretrained model prediction
+        reward = 0.7 * cobra_reward + 0.3 * predicted_yield
+        
+        if steps % 20 == 0:
+            print(f"  Predicted yield: {predicted_yield:.3f}")
+    else:
+        # Fallback to original LASER reward if pretrained model not available
+        laser_reward, selected_genes, similar_strategies = calculate_laser_reward(selected_rxns, laser_data)
+        reward = 0.7 * cobra_reward + 0.3 * laser_reward
     
     # Debug: Print selected genes occasionally
     if steps % 20 == 0:
@@ -264,13 +322,17 @@ for steps in range(num_steps):
     selected_logits = logits[sampled]
     loss = -reward * torch.mean(torch.log_softmax(logits, dim=0)[sampled])
 
-    # backprop
+    # backprop with gradient scaling
     optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
 
     if steps % 10 == 0:
-        print(f"Step {steps} - COBRA: {cobra_reward:.2f}, LASER: {laser_reward:.2f}, Combined: {reward:.2f}")
+        if pretrained_gnn is not None:
+            print(f"Step {steps} - COBRA: {cobra_reward:.2f}, Predicted: {predicted_yield:.3f}, Combined: {reward:.2f}")
+        else:
+            print(f"Step {steps} - COBRA: {cobra_reward:.2f}, LASER: {laser_reward:.2f}, Combined: {reward:.2f}")
 
 # save the model
 checkpoint_path = f"models/{host}_{target}_gnn_rl_checkpoint.pth"
@@ -284,3 +346,7 @@ torch.save({
 }, checkpoint_path)
 
 print(f"\nBest reward: {best_reward:.2f} from edits: {best_edits}")
+
+# Verify limonene-producing reactions exist
+limonene_reactions = [r for r in cobra_model.reactions if 'limonene' in r.name.lower()]
+print(f"Limonene reactions: {limonene_reactions}")

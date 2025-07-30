@@ -12,8 +12,8 @@ from torch_geometric.utils import from_networkx
 from networkx.algorithms.traversal.breadth_first_search import bfs_tree
 
 # Parallel COBRA imports (commented out for now)
-# import multiprocessing as mp
-# from parallel_cobra_simulations import parallel_cobra_batch
+import multiprocessing as mp
+from parallel_cobra_simulations import parallel_cobra_batch
 
 # import config
 from config import host, target
@@ -341,9 +341,8 @@ for steps in range(num_steps):
                 cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
                 cobra_cache[rxns_key] = cobra_reward
                 
-                # PARALLEL COBRA ALTERNATIVE (commented out for now)
-                # # Instead of sequential simulation, use parallel batch:
                 # # cobra_reward = parallel_cobra_batch([selected_rxns], 'iML1515.json', num_processes=8)[rxns_key]
+                cobra_reward = parallel_cobra_batch([selected_rxns], 'iML1515.json', num_processes=8)[rxns_key]
         else:
             # Use surrogate reward based on pretrained model prediction
             cobra_reward = 0.0  # Placeholder for surrogate mode

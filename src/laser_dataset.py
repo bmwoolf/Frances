@@ -7,14 +7,18 @@ from typing import List, Dict, Tuple, Optional
 class LASERDataset(Dataset):
     """Dataset for LASER metabolic engineering data"""
     
-    def __init__(self, laser_data_path: str, cobra_model, network_graph, device='cpu'):
+    def __init__(self, laser_data_path: str, cobra_model, network_graph, device=None):
         """
         Args:
             laser_data_path: Path to LASER training data JSON
             cobra_model: COBRA model for reaction mapping
             network_graph: NetworkX graph for embedding lookup
-            device: Device for tensors
+            device: Device for tensors (defaults to CUDA)
         """
+        if device is None:
+            if not torch.cuda.is_available():
+                raise RuntimeError("GPU is required for training. No CUDA device found.")
+            device = torch.device('cuda')
         self.device = device
         self.cobra_model = cobra_model
         self.network_graph = network_graph

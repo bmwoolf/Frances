@@ -217,7 +217,7 @@ print("=========TRAINING MODEL=========")
 model.train()
 scorer.train()
 
-num_steps = 100
+num_steps = 10000
 best_reward = -1
 best_edits = []
 

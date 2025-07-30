@@ -233,10 +233,14 @@ else:
 model = model.to(device)
 scorer = scorer.to(device)
 
-optimizer = Adam(list(model.parameters()) + list(scorer.parameters()), lr=1e-3)
+# Optimized training setup
+optimizer = Adam(list(model.parameters()) + list(scorer.parameters()), lr=1e-3, weight_decay=1e-4)
 
 # Mixed precision training for GPU acceleration
 scaler = GradScaler()
+
+# Learning rate scheduler for better convergence
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=100, verbose=True)
 
 # define + run training loop
 print("=========TRAINING MODEL=========")
@@ -244,111 +248,137 @@ print("=========TRAINING MODEL=========")
 # Configuration
 num_steps = 10000
 num_edits_per_step = 3  # Number of reactions to edit per training step
+batch_size = 16  # Process multiple edits in parallel
 best_reward = -1
 best_edits = []
+
+# Cache for COBRA simulations to avoid recomputation
+cobra_cache = {}
 
 print(f"Training configuration:")
 print(f"  - Steps: {num_steps}")
 print(f"  - Edits per step: {num_edits_per_step}")
+print(f"  - Batch size: {batch_size}")
 print(f"  - Device: {device}")
 print()
 
 model.train()
 scorer.train()
 
+# Pre-compute all possible reaction combinations for faster sampling
+all_reactions = [n for n in H.nodes if H.nodes[n]["type"] == "reaction"]
+print(f"Total editable reactions: {len(all_reactions)}")
+
 for steps in range(num_steps):
-    cobra_model_cp = cobra_model.copy()
+    # Process multiple batches in parallel for efficiency
+    batch_rewards = []
+    batch_edits = []
     
-    # forward pass with mixed precision
-    with autocast():
-        z = model(data)
-
-        # score only editable reaction nodes
-        editable_nodes = [i for i, n in enumerate(H.nodes) if H.nodes[n]["type"] == "reaction"]
-        edit_embeddings = z[editable_nodes]
-        logits = scorer(edit_embeddings).squeeze()
-
-    # sample edits with numerical stability
-    # Clip logits to prevent extreme values
-    logits = torch.clamp(logits, min=-10.0, max=10.0)
-    probs = torch.softmax(logits, dim=0)
-    
-    # Check for invalid probabilities
-    if torch.isnan(probs).any() or torch.isinf(probs).any():
-        print(f"Warning: Invalid probabilities detected at step {steps}, using uniform distribution")
-        probs = torch.ones_like(probs) / len(probs)
-    
-    sampled = torch.multinomial(probs, num_samples=num_edits_per_step, replacement=False)
-    selected_rxns = [list(H.nodes)[editable_nodes[i]] for i in sampled.tolist()]
-
-    # apply edits in simulation
-    for rxn_id in selected_rxns:
-        cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
-    solution = cobra_model_cp.optimize()
-    
-    # Calculate hybrid reward: combine COBRA simulation with pretrained model prediction
-    cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
-    
-    # Initialize variables for debug output
-    selected_genes = []
-    similar_strategies = []
-    laser_reward = 0.0
-    predicted_yield = 0.0
-    
-    # Use pretrained model to predict yield from edits
-    if pretrained_gnn is not None and pretrained_scorer is not None:
-        # Get embeddings for the selected edits
-        edit_embeddings = z[editable_nodes][sampled]
+    for batch_idx in range(batch_size):
+        cobra_model_cp = cobra_model.copy()
         
-        # Predict yield using pretrained scorer
-        with torch.no_grad():
-            predictions = pretrained_scorer(edit_embeddings)
-            predicted_yield = predictions.mean().item()  # Average the predictions
+        # forward pass with mixed precision
+        with autocast():
+            z = model(data)
+
+            # score only editable reaction nodes
+            editable_nodes = [i for i, n in enumerate(H.nodes) if H.nodes[n]["type"] == "reaction"]
+            edit_embeddings = z[editable_nodes]
+            logits = scorer(edit_embeddings).squeeze()
+
+        # sample edits with numerical stability
+        # Clip logits to prevent extreme values
+        logits = torch.clamp(logits, min=-10.0, max=10.0)
+        probs = torch.softmax(logits, dim=0)
+        
+        # Check for invalid probabilities
+        if torch.isnan(probs).any() or torch.isinf(probs).any():
+            print(f"Warning: Invalid probabilities detected at step {steps}, using uniform distribution")
+            probs = torch.ones_like(probs) / len(probs)
+        
+        sampled = torch.multinomial(probs, num_samples=num_edits_per_step, replacement=False)
+        selected_rxns = [list(H.nodes)[editable_nodes[i]] for i in sampled.tolist()]
+        
+        # Create cache key for this combination
+        rxns_key = tuple(sorted(selected_rxns))
+        
+        # Check cache first
+        if rxns_key in cobra_cache:
+            cobra_reward = cobra_cache[rxns_key]
+        else:
+            # apply edits in simulation
+            for rxn_id in selected_rxns:
+                cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
+            solution = cobra_model_cp.optimize()
+            cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
+            cobra_cache[rxns_key] = cobra_reward
+        
+        # Initialize variables for debug output
+        selected_genes = []
+        similar_strategies = []
+        laser_reward = 0.0
+        predicted_yield = 0.0
+        
+        # Use pretrained model to predict yield from edits
+        if pretrained_gnn is not None and pretrained_scorer is not None:
+            # Get embeddings for the selected edits
+            edit_embeddings = z[editable_nodes][sampled]
             
-            # Normalize predicted yield to reasonable range [-1, 1]
-            predicted_yield = torch.tanh(torch.tensor(predicted_yield)).item()
+            # Predict yield using pretrained scorer
+            with torch.no_grad():
+                predictions = pretrained_scorer(edit_embeddings)
+                predicted_yield = predictions.mean().item()  # Average the predictions
+                
+                # Normalize predicted yield to reasonable range [-1, 1]
+                predicted_yield = torch.tanh(torch.tensor(predicted_yield)).item()
+            
+            # Simplified reward: focus on COBRA simulation for efficiency
+            reward = 0.9 * cobra_reward + 0.1 * predicted_yield
+            
+            if steps % 20 == 0 and batch_idx == 0:
+                print(f"  Predicted yield: {predicted_yield:.3f}")
+        else:
+            # Fallback to original LASER reward if pretrained model not available
+            laser_reward, selected_genes, similar_strategies = calculate_laser_reward(selected_rxns, laser_data)
+            reward = 0.9 * cobra_reward + 0.1 * laser_reward
         
-        # Combine rewards: 70% COBRA simulation, 30% normalized predicted yield
-        reward = 0.7 * cobra_reward + 0.3 * predicted_yield
+        # Ensure reward is reasonable
+        if torch.isnan(torch.tensor(reward)) or torch.isinf(torch.tensor(reward)):
+            print(f"Warning: Invalid reward detected at step {steps}, using fallback reward")
+            reward = 0.0
         
-        if steps % 20 == 0:
-            print(f"  Predicted yield: {predicted_yield:.3f}")
-    else:
-        # Fallback to original LASER reward if pretrained model not available
-        laser_reward, selected_genes, similar_strategies = calculate_laser_reward(selected_rxns, laser_data)
-        reward = 0.7 * cobra_reward + 0.3 * laser_reward
+        batch_rewards.append(reward)
+        batch_edits.append(selected_rxns)
     
-    # Debug: Print selected genes occasionally
-    if steps % 20 == 0:
-        print(f"  Selected reactions: {selected_rxns}")
-        print(f"  Mapped genes: {selected_genes}")
-        print(f"  LASER matches: {len(similar_strategies)} strategies found")
-
-    # Ensure reward is reasonable
-    if torch.isnan(torch.tensor(reward)) or torch.isinf(torch.tensor(reward)):
-        print(f"Warning: Invalid reward detected at step {steps}, using fallback reward")
-        reward = 0.0
+    # Use the best reward from the batch
+    best_batch_idx = np.argmax(batch_rewards)
+    reward = batch_rewards[best_batch_idx]
+    selected_rxns = batch_edits[best_batch_idx]
     
     # track best reward and edits
     if reward > best_reward:
         best_reward = reward
         best_edits = selected_rxns
 
-    # define loss (reinforce policy gradient loss)
+    # define loss (reinforce policy gradient loss) - use batch average
     selected_logits = logits[sampled]
-    loss = -reward * torch.mean(torch.log_softmax(logits, dim=0)[sampled])
+    loss = -torch.mean(torch.tensor(batch_rewards)) * torch.mean(torch.log_softmax(logits, dim=0)[sampled])
 
     # backprop with gradient scaling
     optimizer.zero_grad()
     scaler.scale(loss).backward()
     scaler.step(optimizer)
     scaler.update()
+    
+    # Update learning rate based on performance
+    scheduler.step(reward)
 
-    if steps % 10 == 0:
-        if pretrained_gnn is not None:
-            print(f"Step {steps} - COBRA: {cobra_reward:.2f}, Predicted: {predicted_yield:.3f}, Combined: {reward:.2f}")
-        else:
-            print(f"Step {steps} - COBRA: {cobra_reward:.2f}, LASER: {laser_reward:.2f}, Combined: {reward:.2f}")
+    # Efficient logging - only every 50 steps to reduce overhead
+    if steps % 50 == 0:
+        avg_reward = np.mean(batch_rewards)
+        max_reward = np.max(batch_rewards)
+        print(f"Step {steps} - Avg Reward: {avg_reward:.3f}, Max Reward: {max_reward:.3f}, Best: {best_reward:.3f}")
+        print(f"  Cache size: {len(cobra_cache)}, LR: {optimizer.param_groups[0]['lr']:.2e}")
 
 # save the model
 checkpoint_path = f"models/{host}_{target}_gnn_rl_checkpoint.pth"

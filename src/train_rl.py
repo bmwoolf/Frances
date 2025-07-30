@@ -1,7 +1,5 @@
 import networkx as nx
 import json
-import matplotlib.pyplot as plt
-import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,17 +8,15 @@ from torch.cuda.amp import autocast, GradScaler
 import numpy as np
 
 from torch_geometric.nn import GATConv
-from torch_geometric.data import Data
 from torch_geometric.utils import from_networkx
 from networkx.algorithms.traversal.breadth_first_search import bfs_tree
-from sklearn.manifold import TSNE
 
 # Parallel COBRA imports (commented out for now)
 # import multiprocessing as mp
 # from parallel_cobra_simulations import parallel_cobra_batch
 
 # import config
-from config import host, target, config
+from config import host, target
 
 # Ensure GPU is available
 if not torch.cuda.is_available():

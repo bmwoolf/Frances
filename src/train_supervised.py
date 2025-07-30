@@ -3,15 +3,12 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
-import numpy as np
 import networkx as nx
 from cobra import io
-import json
-import os
 
 # Import our custom modules
 from laser_dataset import LASERDataset
-from config import host, target, config
+from config import host, target
 
 # Ensure GPU is available
 if not torch.cuda.is_available():
@@ -20,10 +17,7 @@ if not torch.cuda.is_available():
 # Import GNN components from main
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv
-from torch_geometric.data import Data
 from torch_geometric.utils import from_networkx
-from networkx.algorithms.traversal.breadth_first_search import bfs_tree
-from sklearn.manifold import TSNE
 
 class GNN(nn.Module):
     """Graph Neural Network for node embeddings"""

@@ -248,7 +248,8 @@ print("=========TRAINING MODEL=========")
 # Configuration
 num_steps = 10000
 num_edits_per_step = 3  # Number of reactions to edit per training step
-batch_size = 16  # Process multiple edits in parallel
+batch_size = 32  # Increased batch size for more efficiency
+cobra_frequency = 0.1  # Only run COBRA simulation 10% of the time
 best_reward = -1
 best_edits = []
 
@@ -259,6 +260,7 @@ print(f"Training configuration:")
 print(f"  - Steps: {num_steps}")
 print(f"  - Edits per step: {num_edits_per_step}")
 print(f"  - Batch size: {batch_size}")
+print(f"  - COBRA frequency: {cobra_frequency}")
 print(f"  - Device: {device}")
 print()
 
@@ -269,14 +271,35 @@ scorer.train()
 all_reactions = [n for n in H.nodes if H.nodes[n]["type"] == "reaction"]
 print(f"Total editable reactions: {len(all_reactions)}")
 
+# Pre-compute COBRA results for common reaction combinations
+print("Pre-computing COBRA results for common combinations...")
+precomputed_combinations = 1000  # Pre-compute 1000 random combinations
+for i in range(precomputed_combinations):
+    # Sample random reaction combinations
+    selected_rxns = np.random.choice(all_reactions, size=num_edits_per_step, replace=False)
+    
+    # Run COBRA simulation
+    cobra_model_cp = cobra_model.copy()
+    for rxn_id in selected_rxns:
+        cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
+    solution = cobra_model_cp.optimize()
+    cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
+    
+    # Cache the result
+    rxns_key = tuple(sorted(selected_rxns))
+    cobra_cache[rxns_key] = cobra_reward
+    
+    if i % 100 == 0:
+        print(f"  Pre-computed {i}/{precomputed_combinations} combinations")
+
+print(f"Pre-computation complete. Cache size: {len(cobra_cache)}")
+
 for steps in range(num_steps):
     # Process multiple batches in parallel for efficiency
     batch_rewards = []
     batch_edits = []
     
     for batch_idx in range(batch_size):
-        cobra_model_cp = cobra_model.copy()
-        
         # forward pass with mixed precision
         with autocast():
             z = model(data)
@@ -299,48 +322,46 @@ for steps in range(num_steps):
         sampled = torch.multinomial(probs, num_samples=num_edits_per_step, replacement=False)
         selected_rxns = [list(H.nodes)[editable_nodes[i]] for i in sampled.tolist()]
         
-        # Create cache key for this combination
-        rxns_key = tuple(sorted(selected_rxns))
-        
-        # Check cache first
-        if rxns_key in cobra_cache:
-            cobra_reward = cobra_cache[rxns_key]
+        # Use surrogate reward most of the time, COBRA only occasionally
+        if np.random.random() < cobra_frequency:
+            # Run COBRA simulation
+            cobra_model_cp = cobra_model.copy()
+            
+            # Create cache key for this combination
+            rxns_key = tuple(sorted(selected_rxns))
+            
+            # Check cache first
+            if rxns_key in cobra_cache:
+                cobra_reward = cobra_cache[rxns_key]
+            else:
+                # apply edits in simulation
+                for rxn_id in selected_rxns:
+                    cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
+                solution = cobra_model_cp.optimize()
+                cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
+                cobra_cache[rxns_key] = cobra_reward
         else:
-            # apply edits in simulation
-            for rxn_id in selected_rxns:
-                cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
-            solution = cobra_model_cp.optimize()
-            cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
-            cobra_cache[rxns_key] = cobra_reward
+            # Use surrogate reward based on pretrained model prediction
+            cobra_reward = 0.0  # Placeholder for surrogate mode
         
-        # Initialize variables for debug output
-        selected_genes = []
-        similar_strategies = []
-        laser_reward = 0.0
-        predicted_yield = 0.0
+        # Get embeddings for the selected edits
+        edit_embeddings = z[editable_nodes][sampled]
         
-        # Use pretrained model to predict yield from edits
-        if pretrained_gnn is not None and pretrained_scorer is not None:
-            # Get embeddings for the selected edits
-            edit_embeddings = z[editable_nodes][sampled]
+        # Predict yield using pretrained scorer
+        with torch.no_grad():
+            predictions = pretrained_scorer(edit_embeddings)
+            predicted_yield = predictions.mean().item()  # Average the predictions
             
-            # Predict yield using pretrained scorer
-            with torch.no_grad():
-                predictions = pretrained_scorer(edit_embeddings)
-                predicted_yield = predictions.mean().item()  # Average the predictions
-                
-                # Normalize predicted yield to reasonable range [-1, 1]
-                predicted_yield = torch.tanh(torch.tensor(predicted_yield)).item()
-            
-            # Simplified reward: focus on COBRA simulation for efficiency
+            # Normalize predicted yield to reasonable range [-1, 1]
+            predicted_yield = torch.tanh(torch.tensor(predicted_yield)).item()
+        
+        # Use surrogate reward most of the time
+        if np.random.random() < cobra_frequency:
+            # Real COBRA simulation
             reward = 0.9 * cobra_reward + 0.1 * predicted_yield
-            
-            if steps % 20 == 0 and batch_idx == 0:
-                print(f"  Predicted yield: {predicted_yield:.3f}")
         else:
-            # Fallback to original LASER reward if pretrained model not available
-            laser_reward, selected_genes, similar_strategies = calculate_laser_reward(selected_rxns, laser_data)
-            reward = 0.9 * cobra_reward + 0.1 * laser_reward
+            # Surrogate reward based on model prediction
+            reward = predicted_yield  # Use model prediction as surrogate
         
         # Ensure reward is reasonable
         if torch.isnan(torch.tensor(reward)) or torch.isinf(torch.tensor(reward)):
@@ -373,8 +394,8 @@ for steps in range(num_steps):
     # Update learning rate based on performance
     scheduler.step(reward)
 
-    # Efficient logging - only every 50 steps to reduce overhead
-    if steps % 50 == 0:
+    # Efficient logging - only every 100 steps to reduce overhead
+    if steps % 100 == 0:
         avg_reward = np.mean(batch_rewards)
         max_reward = np.max(batch_rewards)
         print(f"Step {steps} - Avg Reward: {avg_reward:.3f}, Max Reward: {max_reward:.3f}, Best: {best_reward:.3f}")

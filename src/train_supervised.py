@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 import numpy as np
 import networkx as nx
@@ -142,8 +143,13 @@ def train_supervised_model():
     graph_data = data
     
     # Initialize models
-    gnn = GNN(in_dim=3, hidden_dim=32, out_dim=16).to(device)
-    scorer = EditScorer(input_dim=16).to(device)
+    gnn = GNN(in_dim=3, hidden_dim=512, out_dim=256).to(device)  # Optimal size for this task
+    scorer = EditScorer(input_dim=256, hidden_dim=512).to(device)  # Optimal scorer
+    
+    # Use DataParallel if multiple GPUs available
+    if torch.cuda.device_count() > 1:
+        gnn = nn.DataParallel(gnn)
+        scorer = nn.DataParallel(scorer)
     
     # Create LASER dataset
     laser_dataset = LASERDataset(
@@ -181,41 +187,57 @@ def train_supervised_model():
             'lengths': torch.tensor([len(item['node_indices']) for item in batch])
         }
     
-    dataloader = DataLoader(laser_dataset, batch_size=2, shuffle=True, collate_fn=custom_collate)
+    dataloader = DataLoader(laser_dataset, batch_size=16, shuffle=True, collate_fn=custom_collate)  # Optimal batch size for learning
     
     # Loss and optimizer
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(list(gnn.parameters()) + list(scorer.parameters()), lr=0.001)
+    criterion = nn.HuberLoss(delta=0.1)  # More robust to outliers
+    optimizer = optim.AdamW(list(gnn.parameters()) + list(scorer.parameters()), lr=0.001, weight_decay=0.01)
+    
+    # Learning rate scheduler for better convergence
+    scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=1000, T_mult=2, eta_min=1e-6)
+    
+    # Mixed precision training for better GPU utilization
+    scaler = GradScaler()
+    
+    # Gradient accumulation for effective larger batch sizes
+    accumulation_steps = 4  # Effective batch size = 64 * 4 = 256
     
     # Training loop
-    num_epochs = 100
+    num_epochs = 10000 # Scaled up for better learning
     best_loss = float('inf')
     
     print(f"Training on {len(laser_dataset)} LASER examples")
     print(f"Number of epochs: {num_epochs}")
+    print(f"Expected training time: ~{num_epochs * 2 / 60:.1f} hours")
+    print(f"Starting training...")
     
     for epoch in range(num_epochs):
         epoch_loss = 0.0
         num_batches = 0
         
         for batch_idx, batch_data in enumerate(dataloader):
-            optimizer.zero_grad()
+            # Mixed precision training
+            with autocast():
+                # Get embeddings for the batch
+                batch_embeddings = laser_dataset.get_batch_embeddings(batch_data, gnn)
+                
+                # Predict yields
+                predicted_yields = scorer(batch_embeddings)
+                
+                # Get target yields
+                target_yields = batch_data['target_yield']
+                
+                # Calculate loss
+                loss = criterion(predicted_yields, target_yields)
             
-            # Get embeddings for the batch
-            batch_embeddings = laser_dataset.get_batch_embeddings(batch_data, gnn)
+            # Backward pass with gradient scaling
+            scaler.scale(loss).backward()
             
-            # Predict yields
-            predicted_yields = scorer(batch_embeddings)
-            
-            # Get target yields
-            target_yields = batch_data['target_yield']
-            
-            # Calculate loss
-            loss = criterion(predicted_yields, target_yields)
-            
-            # Backward pass
-            loss.backward()
-            optimizer.step()
+            # Gradient accumulation
+            if (batch_idx + 1) % accumulation_steps == 0:
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
             
             epoch_loss += loss.item()
             num_batches += 1
@@ -229,6 +251,9 @@ def train_supervised_model():
         
         avg_loss = epoch_loss / num_batches
         print(f"Epoch {epoch}: Average Loss = {avg_loss:.4f}")
+        
+        # Update learning rate scheduler
+        scheduler.step()
         
         # Save best model
         if avg_loss < best_loss:

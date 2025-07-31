@@ -249,19 +249,26 @@ print("=========TRAINING MODEL=========")
 # Configuration
 num_steps = 10000
 num_edits_per_step = 3  # Number of reactions to edit per training step
-batch_size = 16  # Reduced batch size to prevent memory issues
-cobra_frequency = 0.05  # Only run COBRA simulation 5% of the time for speed
-cobra_cache_max = 1000  # Limit cache size to prevent memory explosion
+batch_size = 32  # Balanced batch size for stability
+cobra_frequency = 0.1  # Increased COBRA frequency for better learning
 best_reward = -1
 best_edits = []
 
 # Cache for COBRA simulations to avoid recomputation
 cobra_cache = {}
+max_cache_size = 3000  # Smaller cache to prevent memory issues
 
-# Track top-ranked genetic edit
+# Track top-ranked genetic edits for blog post
 top_strategies = []  # List of (reward, strategy) tuples
 training_rewards = []  # Track reward progression
 baseline_rewards = []  # Track random baseline for comparison
+
+# Improved RL parameters for stable training
+epsilon = 0.4  # Higher initial exploration
+min_epsilon = 0.1  # Maintain some exploration
+epsilon_decay = 0.9998  # Much slower decay
+reward_clip = 2.0  # More generous reward clipping
+temperature = 1.0  # Softmax temperature for action selection
 
 # Memory optimization
 import gc
@@ -357,7 +364,7 @@ for steps in range(num_steps):
                 cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
                 
                 # Memory management: limit cache size
-                if len(cobra_cache) >= cobra_cache_max:
+                if len(cobra_cache) >= max_cache_size:
                     # Remove oldest entries (simple FIFO)
                     oldest_keys = list(cobra_cache.keys())[:100]
                     for key in oldest_keys:
@@ -390,10 +397,17 @@ for steps in range(num_steps):
             # Surrogate reward based on model prediction
             reward = predicted_yield  # Use model prediction as surrogate
         
+        # Clip reward to prevent extreme values
+        reward = np.clip(reward, -reward_clip, reward_clip)
+        
         # Ensure reward is reasonable
         if torch.isnan(torch.tensor(reward)) or torch.isinf(torch.tensor(reward)):
             print(f"Warning: Invalid reward detected at step {steps}, using fallback reward")
             reward = 0.0
+        
+        # Add small positive bias to encourage exploration
+        if reward < 0 and np.random.random() < 0.1:  # 10% chance to boost negative rewards
+            reward = max(reward, -0.5)  # Don't let rewards go too negative
         
         batch_rewards.append(reward)
         batch_edits.append(selected_rxns)
@@ -444,8 +458,23 @@ for steps in range(num_steps):
     scaler.step(optimizer)
     scaler.update()
     
+    # Update epsilon for exploration
+    epsilon = max(min_epsilon, epsilon * epsilon_decay)
+    
     # Update learning rate based on performance
     scheduler.step(reward)
+    
+    # Adaptive learning rate based on recent performance
+    if len(training_rewards) > 20:
+        recent_avg = np.mean(training_rewards[-20:])
+        if recent_avg < -0.5:  # If performing poorly
+            # Increase learning rate slightly
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = min(param_group['lr'] * 1.1, 1e-2)
+        elif recent_avg > 0.5:  # If performing well
+            # Decrease learning rate
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = max(param_group['lr'] * 0.95, 1e-5)
 
     # Enhanced logging for testing speed up
     if steps % 50 == 0:  # More frequent logging
@@ -455,6 +484,14 @@ for steps in range(num_steps):
         
         print(f"Step {steps} - Avg: {avg_reward:.3f}, Max: {max_reward:.3f}, Best: {best_reward:.3f}")
         print(f"  Rate: {step_rate:.0f} steps/hour, Cache: {len(cobra_cache)}, LR: {optimizer.param_groups[0]['lr']:.2e}")
+        print(f"  Epsilon: {epsilon:.3f}, Reward range: [{min(batch_rewards):.3f}, {max(batch_rewards):.3f}]")
+        
+        # Track performance improvement
+        if len(training_rewards) > 50:
+            recent_avg = np.mean(training_rewards[-50:])
+            earlier_avg = np.mean(training_rewards[-100:-50]) if len(training_rewards) > 100 else 0
+            improvement = recent_avg - earlier_avg
+            print(f"  Recent improvement: {improvement:+.3f} (50-step avg)")
         
         # Track best strategies
         if reward > best_reward:

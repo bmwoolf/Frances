@@ -249,7 +249,7 @@ print("=========TRAINING MODEL=========")
 # Configuration
 num_steps = 10000
 num_edits_per_step = 3  # Number of reactions to edit per training step
-batch_size = 32  # Balanced batch size for stability
+batch_size = 16  # Balanced batch size for stability
 cobra_frequency = 0.1  # Increased COBRA frequency for better learning
 best_reward = -1
 best_edits = []
@@ -280,7 +280,6 @@ print(f"  - Edits per step: {num_edits_per_step}")
 print(f"  - Batch size: {batch_size}")
 print(f"  - COBRA frequency: {cobra_frequency}")
 print(f"  - Device: {device}")
-print(f"  - Target: 2000+ steps/hour")
 print()
 
 model.train()
@@ -292,7 +291,7 @@ print(f"Total editable reactions: {len(all_reactions)}")
 
 # Pre-compute COBRA results for common reaction combinations
 print("Pre-computing COBRA results for common combinations...")
-precomputed_combinations = 2000  # Pre-compute 2000 random combinations for speed
+precomputed_combinations = 1000  # Pre-compute 1000 random combinations for speed
 for i in range(precomputed_combinations):
     # Sample random reaction combinations
     selected_rxns = np.random.choice(all_reactions, size=num_edits_per_step, replace=False)
@@ -373,7 +372,7 @@ for steps in range(num_steps):
                 cobra_cache[rxns_key] = cobra_reward
                 
                 # # cobra_reward = parallel_cobra_batch([selected_rxns], 'iML1515.json', num_processes=8)[rxns_key]
-                cobra_reward = parallel_cobra_batch([selected_rxns], 'iML1515.json', num_processes=8)[rxns_key]
+                cobra_reward = parallel_cobra_batch([selected_rxns], 'iML1515.json', num_processes=2)[rxns_key]
         else:
             # Use surrogate reward based on pretrained model prediction
             cobra_reward = 0.0  # Placeholder for surrogate mode

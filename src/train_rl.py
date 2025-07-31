@@ -249,8 +249,9 @@ print("=========TRAINING MODEL=========")
 # Configuration
 num_steps = 10000
 num_edits_per_step = 3  # Number of reactions to edit per training step
-batch_size = 64  # Increase batch size for maximum efficiency
+batch_size = 16  # Reduced batch size to prevent memory issues
 cobra_frequency = 0.05  # Only run COBRA simulation 5% of the time for speed
+cobra_cache_max = 1000  # Limit cache size to prevent memory explosion
 best_reward = -1
 best_edits = []
 
@@ -261,6 +262,10 @@ cobra_cache = {}
 top_strategies = []  # List of (reward, strategy) tuples
 training_rewards = []  # Track reward progression
 baseline_rewards = []  # Track random baseline for comparison
+
+# Memory optimization
+import gc
+import psutil
 
 print(f"Training configuration:")
 print(f"  - Steps: {num_steps}")
@@ -350,6 +355,14 @@ for steps in range(num_steps):
                     cobra_model_cp.reactions.get_by_id(rxn_id).knock_out()
                 solution = cobra_model_cp.optimize()
                 cobra_reward = solution.objective_value if solution.status == "optimal" else 0.0
+                
+                # Memory management: limit cache size
+                if len(cobra_cache) >= cobra_cache_max:
+                    # Remove oldest entries (simple FIFO)
+                    oldest_keys = list(cobra_cache.keys())[:100]
+                    for key in oldest_keys:
+                        del cobra_cache[key]
+                
                 cobra_cache[rxns_key] = cobra_reward
                 
                 # # cobra_reward = parallel_cobra_batch([selected_rxns], 'iML1515.json', num_processes=8)[rxns_key]
@@ -448,6 +461,16 @@ for steps in range(num_steps):
             print(f"NEW BEST STRATEGY: {selected_rxns}")
             print(f"Reward: {reward:.4f}, Genes: {[r.replace('RXN_', '') for r in selected_rxns]}")
         
+        # Memory management every 100 steps
+        if steps % 100 == 0:
+            # Force garbage collection
+            gc.collect()
+            
+            # Monitor memory usage
+            memory_usage = psutil.Process().memory_info().rss / 1024 / 1024  # MB
+            if memory_usage > 8000:  # Warning if > 8GB
+                print(f"⚠️  Memory usage: {memory_usage:.1f} MB - consider reducing batch size")
+        
         # Every 500 steps, show detailed analysis
         if steps % 500 == 0 and steps > 0:
             print(f"\nTRAINING ANALYSIS (Step {steps}):")
@@ -456,6 +479,10 @@ for steps in range(num_steps):
             print(f"  - Best strategy: {best_edits}")
             print(f"  - Training rate: {step_rate:.0f} steps/hour")
             print(f"  - Cache hit rate: {len(cobra_cache)} pre-computed combinations")
+            
+            # Memory monitoring
+            memory_usage = psutil.Process().memory_info().rss / 1024 / 1024  # MB
+            print(f"  - Memory usage: {memory_usage:.1f} MB")
             
             # Show top-ranked genetic edits
             print(f"\n  TOP-RANKED GENETIC EDITS:")
@@ -468,7 +495,10 @@ for steps in range(num_steps):
                 avg_rl_reward = np.mean(training_rewards[-100:]) if len(training_rewards) >= 100 else np.mean(training_rewards)
                 avg_baseline = np.mean(baseline_rewards)
                 improvement = ((avg_rl_reward - avg_baseline) / avg_baseline * 100) if avg_baseline > 0 else 0
-                print(f"  - RL vs Random: {improvement:.1f}% improvement")
+                print(f"\nPERFORMANCE COMPARISON:")
+                print(f"  - RL Agent Average: {avg_rl_reward:.4f}")
+                print(f"  - Random Baseline: {avg_baseline:.4f}")
+                print(f"  - Improvement: {improvement:.1f}% over random")
             
             print("=" * 50)
 
